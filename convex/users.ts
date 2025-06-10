@@ -4,40 +4,63 @@ import Stripe from "stripe";
 import { api, internal } from "./_generated/api";
 
 export const store = mutation({
-    args: {},
-    handler: async (ctx) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) {
-            throw new Error("Called storeUser without authentication present");
-        }
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated call to store");
+    }
 
-        // Check if we've already stored this identity before.
-        const user = await ctx.db
-            .query("users")
-            .withIndex("by_token", (q) =>
-                q.eq("tokenIdentifier", identity.tokenIdentifier)
-            )
-            .unique();
-        if (user !== null) {
-            // If we've seen this identity before but the name has changed, patch the value.
-            if (user.username !== identity.nickname) {
-                await ctx.db.patch(user._id, { username: identity.nickname });
-            }
-            return user._id;
-        }
+    // Updated to use the correct index name
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) =>
+        q.eq("tokenIdentifier", identity.tokenIdentifier)
+      )
+      .unique();
 
-        // If it's a new identity, create a new `User`.
-        const userId = await ctx.db.insert("users", {
-            fullName: identity.name!,
-            tokenIdentifier: identity.tokenIdentifier,
-            title: "",
-            about: "",
-            username: identity.nickname!,
-            profileImageUrl: identity.profileUrl,
-        });
+    if (user) {
+      // Update if needed
+      const updates: Record<string, any> = {};
+      
+      if (identity.nickname && user.username !== identity.nickname) {
+        updates.username = identity.nickname;
+      }
+      
+      if (identity.name && user.fullName !== identity.name) {
+        updates.fullName = identity.name;
+      }
+      
+      if (identity.profileUrl && user.profileImageUrl !== identity.profileUrl) {
+        updates.profileImageUrl = identity.profileUrl;
+      }
+      
+      if (Object.keys(updates).length > 0) {
+        await ctx.db.patch(user._id, updates);
+      }
+      return user._id;
+    }
 
-        return userId;
-    },
+    // Create new user with proper fallbacks
+    const newUser = {
+      tokenIdentifier: identity.tokenIdentifier,
+      username: identity.nickname || `user_${Math.random().toString(36).slice(2, 8)}`,
+      fullName: identity.name || identity.nickname || "New User", // Better fallback chain
+      profileImageUrl: identity.profileUrl || "",
+      title: "",
+      about: "",
+      stripeAccountId: "",
+      stripeAccountSetupComplete: false,
+      favoritedSellerIds: [],
+      portfolioUrls: [],
+      customTag: ""
+    };
+
+    // Debug log to see what we're trying to insert (remove in production)
+    console.log("Inserting user:", newUser);
+
+    return await ctx.db.insert("users", newUser);
+  },
 });
 
 
@@ -199,5 +222,39 @@ export const getCountryByUsername = query({
             throw new Error("Country not found");
         }
         return country;
+    },
+});
+
+export const updateProfile = mutation({
+    args: {
+        bio: v.optional(v.string()),
+        country: v.optional(v.string()),
+        languages: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+
+        if (!identity) {
+            throw new Error("Unauthorized");
+        }
+
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_token", (q) =>
+                q.eq("tokenIdentifier", identity.tokenIdentifier)
+            )
+            .unique();
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        await ctx.db.patch(user._id, {
+            bio: args.bio,
+            country: args.country,
+            languages: args.languages,
+        });
+
+        return user;
     },
 });

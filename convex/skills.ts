@@ -9,7 +9,7 @@ export const getByUser = query({
         const identity = await ctx.auth.getUserIdentity();
 
         if (!identity) {
-            throw new Error("Unauthorized");
+            return [];
         }
 
         const user = await ctx.db
@@ -18,7 +18,7 @@ export const getByUser = query({
             .first();
 
         if (!user) {
-            throw new Error("User not found");
+            return [];
         }
 
         const skills = await ctx.db

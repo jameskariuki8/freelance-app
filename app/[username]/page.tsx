@@ -23,15 +23,19 @@ const SellerPage = ({
     //const orders = useQuery(api.orders.getByGig, { gigId: params.gigId as Id<"gigs"> });
     const reviews = useQuery(api.reviews.getBySellerName, { sellerName: params.username });
 
-    if (seller === undefined || reviews === undefined || skills === undefined || gigs === undefined) {
+    if (seller === undefined || reviews === undefined) {
         return <div>Loading...</div>
     }
 
-    if (seller === null || gigs === null) {
-        return <div>Not found</div>
+    if (seller === null) {
+        return <div>User not found</div>
     }
 
-    const skillsString = skills ? skills.map((skill) => skill.skill).join(", ") : "";
+    if (skills === undefined) {
+        return <div>Loading skills...</div>
+    }
+
+    const skillsString = skills ? skills.map((skill) => skill.skill).join(", ") : "No skills listed";
 
     return (
         <div className="space-y-12">
@@ -39,7 +43,7 @@ const SellerPage = ({
                 <div className="w-full space-y-8 max-w-[700px]">
                     <ProfileCard
                         seller={seller}
-                        reviews={reviews}
+                        reviews={reviews || []}
                     />
                     <div>
                         <p className="font-bold">About me</p>
@@ -56,10 +60,10 @@ const SellerPage = ({
             />
 
             <ReviewsStats
-                reviews={reviews}
+                reviews={reviews || []}
             />
             <Reviews
-                reviews={reviews}
+                reviews={reviews || []}
             />
         </div>
     )

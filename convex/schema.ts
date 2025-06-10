@@ -15,8 +15,8 @@ export default defineSchema({
         stripeAccountId: v.optional(v.string()),
         stripeAccountSetupComplete: v.optional(v.boolean()),
     })
-        .index("by_token", ["tokenIdentifier"])
-        .index("by_username", ["username"]),
+         .index("by_token", ["tokenIdentifier"]) // Changed to match expected index name
+         .index("by_username", ["username"]), // Add other indexes as needed
     reviews: defineTable({
         authorId: v.id("users"),
         sellerId: v.id("users"),

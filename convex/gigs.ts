@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query } from "./_generated/server";
+import { query, mutation } from "./_generated/server";
 
 export const get = query({
     args: {
@@ -258,5 +258,42 @@ export const getGigsWithOrderAmountAndRevenue = query({
 
 
         return gigsFull
+    },
+});
+
+export const create = mutation({
+    args: {
+        title: v.string(),
+        description: v.string(),
+        subcategoryId: v.id("subcategories"),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+
+        if (!identity) {
+            throw new Error("Unauthorized");
+        }
+
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_token", (q) =>
+                q.eq("tokenIdentifier", identity.tokenIdentifier)
+            )
+            .unique();
+
+        if (!user) {
+            throw new Error("Couldn't authenticate user");
+        }
+
+        const gigId = await ctx.db.insert("gigs", {
+            title: args.title,
+            description: args.description,
+            sellerId: user._id,
+            subcategoryId: args.subcategoryId,
+            published: true,
+            clicks: 0,
+        });
+
+        return gigId;
     },
 });

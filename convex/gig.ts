@@ -56,23 +56,20 @@ export const get = query({
             throw new Error("Seller not found");
         }
 
+        // Get country if it exists
         const country = await ctx.db.query("countries")
             .withIndex("by_userId", (q) => q.eq("userId", seller._id))
             .unique();
 
-        if (country === null) {
-            throw new Error("Country not found");
-        }
-
-        // get languages
+        // Get languages
         const languages = await ctx.db.query("languages")
             .withIndex("by_userId", (q) => q.eq("userId", seller._id))
             .collect();
 
         const sellerWithCountryAndLanguages = {
             ...seller,
-            country: country,
-            languages: languages,
+            country: country || { countryName: "Not specified" },
+            languages: languages || [],
         };
 
         const gigWithSeller = {
@@ -86,12 +83,10 @@ export const get = query({
             .order("desc")
             .first();
 
-
         const gigWithSellerAndLastFulfilment = {
             ...gigWithSeller,
             lastFulfilment: lastFulfilment,
         };
-
 
         // get images
         const images = await ctx.db.query("gigMedia")

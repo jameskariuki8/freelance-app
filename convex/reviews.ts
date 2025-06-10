@@ -99,7 +99,7 @@ export const getBySellerName = query({
             .unique();
 
         if (!seller) {
-            throw new Error("Seller not found");
+            return [];
         }
 
         const reviews = await ctx.db

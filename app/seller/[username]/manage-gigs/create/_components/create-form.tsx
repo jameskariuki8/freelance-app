@@ -4,6 +4,7 @@ import Link from "next/link"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useFieldArray, useForm } from "react-hook-form"
 import { z } from "zod"
+import { useEffect, useState } from "react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -14,7 +15,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner"
 import { api } from "@/convex/_generated/api"
 import { useQuery } from "convex/react"
-import { useState } from "react"
 import { Doc, Id } from "@/convex/_generated/dataModel"
 import { useApiMutation } from "@/hooks/use-api-mutation"
 import { useRouter } from "next/navigation"
@@ -53,11 +53,22 @@ export const CreateForm = ({
     username
 }: CreateFormProps) => {
     const categories = useQuery(api.categories.get);
-    const [subcategories, setSubcategories] = useState<Doc<"subcategories">[]>([]);
+    const [selectedCategoryId, setSelectedCategoryId] = useState<Id<"categories"> | null>(null);
+    const subcategories = useQuery(api.categories.getSubcategories, 
+        selectedCategoryId ? { categoryId: selectedCategoryId } : "skip"
+    );
     const {
-        mutate,
-        pending
+        mutate: createGig,
+        pending: createPending
     } = useApiMutation(api.gig.create);
+    const {
+        mutate: seedCategories,
+        pending: seedPending
+    } = useApiMutation(api.categories.seedCategories);
+    const {
+        mutate: forceReseed,
+        pending: reseedPending
+    } = useApiMutation(api.categories.forceReseed);
     const router = useRouter();
 
     const form = useForm<CreateFormValues>({
@@ -66,22 +77,47 @@ export const CreateForm = ({
         mode: "onChange",
     })
 
+    // Force reseed categories and subcategories if needed
+    useEffect(() => {
+        if (categories && categories.length === 0) {
+            forceReseed({}).then(() => {
+                console.log('Categories and subcategories reseeded');
+            }).catch((error) => {
+                console.error('Error reseeding categories:', error);
+            });
+        }
+    }, [categories, forceReseed]);
+
     function handleCategoryChange(categoryName: string) {
-        if (categories === undefined) return;
+        if (!categories) return;
+        
         const selectedCategory = categories.find(category => category.name === categoryName);
         if (selectedCategory) {
-            setSubcategories(selectedCategory.subcategories);
+            setSelectedCategoryId(selectedCategory._id);
+            form.setValue("subcategoryId", "");
+        } else {
+            setSelectedCategoryId(null);
         }
     }
+
+    if (!categories || seedPending || reseedPending) {
+        return <div>Loading categories...</div>;
+    }
+
     function onSubmit(data: CreateFormValues) {
-        mutate({
+        console.log('Form submitted with data:', data);
+        if (!data.subcategoryId) {
+            toast.error("Please select a subcategory");
+            return;
+        }
+        
+        createGig({
             title: data.title,
             description: "",
             subcategoryId: data.subcategoryId,
         })
             .then((gigId: Id<"gigs">) => {
                 toast.info("Gig created successfully");
-                //form.setValue("title", "");
                 router.push(`/seller/${username}/manage-gigs/edit/${gigId}`)
             })
             .catch(() => {
@@ -92,6 +128,23 @@ export const CreateForm = ({
     return (
         <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+                <div className="flex justify-end">
+                    <Button 
+                        type="button" 
+                        variant="outline" 
+                        onClick={() => {
+                            forceReseed({}).then(() => {
+                                toast.success("Categories and subcategories reseeded successfully");
+                            }).catch((error) => {
+                                console.error('Error reseeding:', error);
+                                toast.error("Failed to reseed categories and subcategories");
+                            });
+                        }}
+                        disabled={reseedPending}
+                    >
+                        {reseedPending ? "Reseeding..." : "Reseed Categories"}
+                    </Button>
+                </div>
                 <FormField
                     control={form.control}
                     name="title"
@@ -115,26 +168,24 @@ export const CreateForm = ({
                         <FormItem>
                             <FormLabel>Category</FormLabel>
                             <Select
-                                onValueChange={(categoryName: string) => {
-                                    field.onChange(categoryName);
-                                    handleCategoryChange(categoryName);
+                                onValueChange={(value) => {
+                                    field.onChange(value);
+                                    handleCategoryChange(value);
                                 }}
-                                defaultValue={field.value}
+                                value={field.value}
                             >
                                 <FormControl>
                                     <SelectTrigger>
                                         <SelectValue placeholder="Select a category" />
                                     </SelectTrigger>
                                 </FormControl>
-                                {categories && (
-                                    <SelectContent>
-                                        {categories.map((category) => (
-                                            <SelectItem key={category._id} value={category.name}>
-                                                {category.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                )}
+                                <SelectContent>
+                                    {categories.map((category) => (
+                                        <SelectItem key={category._id} value={category.name}>
+                                            {category.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
                             </Select>
                             <FormDescription>
                                 Select a category most relevant to your service.
@@ -149,15 +200,19 @@ export const CreateForm = ({
                     render={({ field }) => (
                         <FormItem>
                             <FormLabel>Subcategory</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <Select 
+                                onValueChange={field.onChange}
+                                value={field.value}
+                                disabled={!selectedCategoryId}
+                            >
                                 <FormControl>
                                     <SelectTrigger>
-                                        <SelectValue placeholder="Select a subcategory" />
+                                        <SelectValue placeholder={!selectedCategoryId ? "Select a category first" : "Select a subcategory"} />
                                     </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                    {subcategories.map((subcategory, index) => (
-                                        <SelectItem key={index} value={subcategory._id}>
+                                    {subcategories?.map((subcategory) => (
+                                        <SelectItem key={subcategory._id} value={subcategory._id}>
                                             {subcategory.name}
                                         </SelectItem>
                                     ))}
@@ -170,7 +225,7 @@ export const CreateForm = ({
                         </FormItem>
                     )}
                 />
-                <Button type="submit" disabled={pending}>Save</Button>
+                <Button type="submit" disabled={createPending}>Save</Button>
             </form>
         </Form>
     )
